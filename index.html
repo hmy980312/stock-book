@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#ff7ea8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="我的股票本">
+  <!-- iOS 桌面图标（必须本地 PNG，iOS 不读 manifest icons）-->
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="./icons/icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
+  <!-- iOS 启动图背景色（减少白屏感）-->
+  <meta name="apple-mobile-web-app-status-bar-background" content="#fff6f9">
+  <!-- 禁用缓存，保证APP/网页每次取最新代码 -->
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <!-- 启动前先注销旧版 Service Worker（保留新 v9，避免旧版死缓存导致白屏）-->
+  <script>
+    try {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          for (var i = 0; i < rs.length; i++) {
+            try {
+              // 只注销非当前版本的旧 SW（v9 之前的）
+              var sw = rs[i].active || rs[i].waiting || rs[i].installing;
+              if (sw && sw.scriptURL && sw.scriptURL.indexOf('sw.js') >= 0) {
+                // 交给 sw.js activate 阶段清理旧缓存，这里不强制注销新 SW
+                // 仅当版本过旧时注销（保守做法：全部保留，由新 SW 接管）
+              }
+            } catch (_) {}
+          }
+        }).catch(function () {});
+        // 清理 v8 及更早的缓存（v9 由新 SW 自己管理）
+        if (window.caches && typeof caches.keys === 'function') {
+          caches.keys().then(function (ks) {
+            ks.forEach(function (k) {
+              // 保留 v9，清理其他 stock-workbench 旧版本缓存
+              if (k.indexOf('stock-workbench') === 0 && k.indexOf('-v9') < 0) {
+                try { caches.delete(k); } catch (_) {}
+              }
+            });
+          }).catch(function () {});
+        }
+      }
+    } catch (e) { /* ignore */ }
+  </script>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./css/style.css?t=INSIGHT1">
+  <title>我的股票本</title>
+</head>
+<body>
+  <!-- 启动页 -->
+  <div id="splash" class="splash">
+    <div class="splash-content">
+      <div class="splash-icon">🌸</div>
+      <h1 class="splash-title">我的股票本</h1>
+      <p class="splash-quote" id="splashQuote">加载中...</p>
+      <p class="splash-tip" style="margin-top:24px;font-size:12px;opacity:0.85">🌷 所有股票均需你手动添加，隐私安全</p>
+    </div>
+  </div>
+
+  <!-- 安装提示 -->
+  <div id="installPrompt" class="install-prompt hidden">
+    <div class="install-content">
+      <span>📲 安装到手机桌面，随时查看行情</span>
+      <button id="installBtn" class="btn btn-primary btn-sm">立即安装</button>
+      <button id="dismissInstall" class="btn btn-ghost btn-sm">×</button>
+    </div>
+  </div>
+
+  <!-- 顶部导航 -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="logo-icon">🌷</span>
+      <div class="title-group">
+        <h1 class="app-title">我的股票本</h1>
+        <span class="update-time" id="updateTime">--:--:--</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="refreshBtn" class="icon-btn" title="刷新行情">🔄</button>
+      <button id="addStockBtn" class="icon-btn" title="添加股票">➕</button>
+    </div>
+  </header>
+
+  <!-- 标签导航 -->
+  <nav class="tab-nav">
+    <div class="tab active" data-tab="stocks">
+      <span class="tab-icon">📋</span>
+      <span class="tab-text">自选股</span>
+    </div>
+    <div class="tab" data-tab="sectors">
+      <span class="tab-icon">🏷️</span>
+      <span class="tab-text">板块</span>
+    </div>
+    <div class="tab" data-tab="strategy">
+      <span class="tab-icon">🎯</span>
+      <span class="tab-text">交易</span>
+    </div>
+    <div class="tab" data-tab="insights">
+      <span class="tab-icon">💡</span>
+      <span class="tab-text">悟道</span>
+    </div>
+    <div class="tab" data-tab="dashboard">
+      <span class="tab-icon">📈</span>
+      <span class="tab-text">统计</span>
+    </div>
+    <div class="tab" data-tab="settings">
+      <span class="tab-icon">⚙️</span>
+      <span class="tab-text">设置</span>
+    </div>
+  </nav>
+
+  <!-- 主内容区 -->
+  <main class="main-content">
+    <!-- 自选股页面 -->
+    <section id="tab-stocks" class="tab-panel active">
+      <!-- 顶部统计卡片 -->
+      <div class="stats-bar" id="statsBar">
+        <div class="stat-item">
+          <span class="stat-label">持仓数</span>
+          <span class="stat-value" id="statCount">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">上涨</span>
+          <span class="stat-value up" id="statUp">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">下跌</span>
+          <span class="stat-value down" id="statDown">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">总盈亏</span>
+          <span class="stat-value" id="statTotal">--</span>
+        </div>
+      </div>
+
+      <!-- 板块筛选 -->
+      <div class="sector-filter" id="sectorFilter">
+        <span class="filter-tag active" data-sector="all">全部</span>
+      </div>
+
+      <!-- 股票列表 -->
+      <div class="stock-list" id="stockList">
+        <div class="empty-state">
+          <div class="empty-icon">🌷</div>
+          <p class="empty-text" style="font-size:15px;font-weight:500">这里是你的专属股票本 💕</p>
+          <p class="empty-text" style="margin-top:4px;font-size:13px">点击下方按钮，手动添加你的第一只自选股</p>
+          <button class="btn btn-primary" onclick="app.openAddStockModal()" style="margin-top:12px">＋ 添加我的第一只股票</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 板块页面 -->
+    <section id="tab-sectors" class="tab-panel">
+      <div class="page-header">
+        <h2>板块管理</h2>
+        <button class="btn btn-primary btn-sm" onclick="app.openAddSectorModal()">+ 新建板块</button>
+      </div>
+      <div class="sector-list" id="sectorList"></div>
+    </section>
+
+    <!-- 交易策略页面 -->
+    <section id="tab-strategy" class="tab-panel">
+      <div class="page-header">
+        <h2>🎯 交易策略分析</h2>
+        <span class="refresh-hint" style="font-size:12px;color:var(--text-light)">根据风格自动判断买卖</span>
+      </div>
+
+      <!-- 步骤1：选择交易风格 -->
+      <div class="strategy-step">
+        <div class="step-title"><span class="step-num">1</span>选择你的交易风格</div>
+        <div class="style-grid">
+          <div class="style-card left-style" onclick="app.selectTradeStyle('left')" id="styleCardLeft">
+            <div class="style-emoji">🌙</div>
+            <div class="style-name">左侧交易</div>
+            <div class="style-desc">抄底式 · 价值买入<br>越跌越买 · 分批建仓</div>
+          </div>
+          <div class="style-card right-style" onclick="app.selectTradeStyle('right')" id="styleCardRight">
+            <div class="style-emoji">☀️</div>
+            <div class="style-name">右侧交易</div>
+            <div class="style-desc">追涨式 · 趋势确认<br>突破买入 · 顺势而为</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤2：选择股票 -->
+      <div class="strategy-step" id="stepPickStock" style="display:none">
+        <div class="step-title"><span class="step-num">2</span>选择要分析的自选股</div>
+        <div class="stock-pick-list" id="stockPickList">
+          <div class="empty-state" style="padding:20px 10px">
+            <div class="empty-icon" style="font-size:32px">📭</div>
+            <p class="empty-text">还没有添加自选股，先去添加吧 💕</p>
+            <button class="btn btn-primary btn-sm" onclick="app.openAddStockModal()">+ 添加股票</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤3：参数确认 -->
+      <div class="strategy-step" id="stepParams" style="display:none">
+        <div class="step-title">
+          <span class="step-num">3</span>
+          交易参数确认
+          <button class="btn btn-outline btn-sm" style="float:right;font-size:12px;padding:4px 10px" onclick="app.autoFillStrategyParams()">✨ 自动填充</button>
+        </div>
+
+        <!-- 左侧交易参数 -->
+        <div id="leftParams" style="display:none">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>合理估值(元) <small>· 内在价值/目标价</small></label>
+              <input type="number" id="param_reasonablePrice" placeholder="如 1800.00" step="0.01" min="0">
+            </div>
+            <div class="form-group flex-1">
+              <label>总资金(元)</label>
+              <input type="number" id="param_totalCapital" placeholder="100000" step="1000" min="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>买点系数 <small>· 越小越保守(0.5~0.9)</small></label>
+              <input type="number" id="param_buyFormula" placeholder="0.70" step="0.05" min="0.3" max="1">
+            </div>
+            <div class="form-group flex-1">
+              <label>超跌偏离% <small>· 偏离MA20阈值(-5~-20)</small></label>
+              <input type="number" id="param_oversoldFormula" placeholder="-10" step="1" min="-30" max="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>偏离度警戒% <small>· 极端抄底(-10~-25)</small></label>
+              <input type="number" id="param_biasFormula" placeholder="-15" step="1" min="-40" max="0">
+            </div>
+            <div class="form-group flex-1">
+              <label>单股最大仓位%</label>
+              <input type="number" id="param_positionRatio" placeholder="25" step="5" min="5" max="100">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>止盈比例%</label>
+              <input type="number" id="param_takeProfitRatio" placeholder="30" step="5" min="5" max="200">
+            </div>
+            <div class="form-group flex-1">
+              <label>止损比例%</label>
+              <input type="number" id="param_stopLossRatio" placeholder="8" step="1" min="1" max="30">
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧交易参数 -->
+        <div id="rightParams" style="display:none">
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>前高(元) <small>· 近期压力位</small></label>
+              <input type="number" id="param_prevHigh" placeholder="如 1800.00" step="0.01" min="0">
+            </div>
+            <div class="form-group flex-1">
+              <label>总资金(元)</label>
+              <input type="number" id="param_totalCapital_r" placeholder="100000" step="1000" min="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>突破确认% <small>· 突破前高幅度(2~10)</small></label>
+              <input type="number" id="param_breakConfirm" placeholder="3" step="0.5" min="0" max="20">
+            </div>
+            <div class="form-group flex-1">
+              <label>趋势确认 <small>· MA5>MA20 则开启</small></label>
+              <select id="param_trendConfirm">
+                <option value="true" selected>开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label>单股最大仓位%</label>
+              <input type="number" id="param_positionRatio_r" placeholder="25" step="5" min="5" max="100">
+            </div>
+            <div class="form-group flex-1">
+              <label>卖出跌破% <small>· 跌破MA20触发(-3~-10)</small></label>
+              <input type="number" id="param_sellTrendBreak" placeholder="-5" step="1" min="-20" max="0">
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="app.runStrategy()">🎯 开始分析</button>
+      </div>
+
+      <!-- 步骤4：结果展示 -->
+      <div class="strategy-step" id="stepResult" style="display:none">
+        <div class="step-title"><span class="step-num">4</span>分析结果</div>
+        <div id="resultContent"></div>
+      </div>
+    </section>
+
+    <!-- 悟道页面 -->
+    <section id="tab-insights" class="tab-panel">
+      <div class="page-header">
+        <h2>💡 悟道笔记</h2>
+        <button class="btn btn-primary btn-sm" onclick="app.openAddInsightModal()">+ 写感悟</button>
+      </div>
+
+      <!-- 搜索 + 筛选 -->
+      <div class="insights-toolbar">
+        <div class="insight-search">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="insightSearch" placeholder="搜索关键词 / 标题 / 内容 / 关联股票...">
+        </div>
+        <div class="insight-mood-filter" id="insightMoodFilter">
+          <span class="mood-chip active" data-mood="all">全部</span>
+          <span class="mood-chip" data-mood="🧘">🧘 平静</span>
+          <span class="mood-chip" data-mood="📈">📈 看多</span>
+          <span class="mood-chip" data-mood="📉">📉 看空</span>
+          <span class="mood-chip" data-mood="🫂">🫂 反思</span>
+          <span class="mood-chip" data-mood="🔥">🔥 警示</span>
+        </div>
+      </div>
+
+      <!-- 悟道列表 -->
+      <div class="insight-list" id="insightList"></div>
+    </section>
+
+    <!-- 统计页面 -->
+    <section id="tab-dashboard" class="tab-panel">
+      <div class="dashboard-header">
+        <h2>投资小日记 🌸</h2>
+        <span class="refresh-hint" id="refreshHint">自动刷新: 15:00</span>
+      </div>
+
+      <!-- 总览卡片 -->
+      <div class="overview-grid">
+        <div class="overview-card">
+          <div class="card-label">总市值</div>
+          <div class="card-value" id="dashMarketValue">¥0.00</div>
+        </div>
+        <div class="overview-card">
+          <div class="card-label">今日盈亏</div>
+          <div class="card-value" id="dashTodayPL">¥0.00</div>
+        </div>
+        <div class="overview-card">
+          <div class="card-label">总盈亏</div>
+          <div class="card-value" id="dashTotalPL">¥0.00</div>
+        </div>
+        <div class="overview-card">
+          <div class="card-label">平均涨幅</div>
+          <div class="card-value" id="dashAvgChange">0.00%</div>
+        </div>
+      </div>
+
+      <!-- 板块分布 -->
+      <div class="chart-section">
+        <h3 class="section-title">📊 板块分布</h3>
+        <div class="sector-chart" id="sectorChart"></div>
+      </div>
+
+      <!-- 涨跌榜 -->
+      <div class="ranking-section">
+        <div class="ranking-box">
+          <h3 class="section-title up">💖 今日表现 TOP5</h3>
+          <div class="ranking-list" id="topGainers"></div>
+        </div>
+        <div class="ranking-box">
+          <h3 class="section-title down">🫂 需要鼓励的 TOP5</h3>
+          <div class="ranking-list" id="topLosers"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 设置页面 -->
+    <section id="tab-settings" class="tab-panel">
+      <div class="settings-list">
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-icon">🔄</span>
+            <div>
+              <div class="setting-title">自动刷新间隔</div>
+              <div class="setting-desc">行情数据自动刷新频率</div>
+            </div>
+          </div>
+          <select id="refreshInterval" class="setting-select">
+            <option value="0">关闭</option>
+            <option value="60">1分钟</option>
+            <option value="300" selected>5分钟</option>
+            <option value="600">10分钟</option>
+            <option value="900">15分钟</option>
+          </select>
+        </div>
+
+        <div class="setting-item" onclick="app.exportData()">
+          <div class="setting-info">
+            <span class="setting-icon">📤</span>
+            <div>
+              <div class="setting-title">导出数据</div>
+              <div class="setting-desc">导出自选股数据为JSON</div>
+            </div>
+          </div>
+          <span class="setting-arrow">›</span>
+        </div>
+
+        <div class="setting-item" onclick="document.getElementById('importFile').click()">
+          <div class="setting-info">
+            <span class="setting-icon">📥</span>
+            <div>
+              <div class="setting-title">导入数据</div>
+              <div class="setting-desc">从JSON文件恢复数据</div>
+            </div>
+          </div>
+          <span class="setting-arrow">›</span>
+        </div>
+        <input type="file" id="importFile" accept=".json" class="hidden">
+
+        <div class="setting-item" onclick="app.clearAllData()">
+          <div class="setting-info">
+            <span class="setting-icon danger">🗑️</span>
+            <div>
+              <div class="setting-title danger-text">清空所有数据</div>
+              <div class="setting-desc">删除全部自选股和板块</div>
+            </div>
+          </div>
+          <span class="setting-arrow">›</span>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-icon">ℹ️</span>
+            <div>
+              <div class="setting-title">版本信息</div>
+              <div class="setting-desc">我的股票本 v1.0.0 💕</div>
+            </div>
+          </div>
+          <span class="setting-arrow">›</span>
+        </div>
+      </div>
+
+      <div class="install-section">
+        <div class="install-card">
+          <h3>📲 安装为手机APP</h3>
+          <ol class="install-steps">
+            <li>在安卓<strong>Chrome浏览器</strong>中打开本页面</li>
+            <li>点击浏览器<strong>右上角菜单 ⋮</strong></li>
+            <li>选择<strong>「添加到主屏幕」</strong>或<strong>「安装应用」</strong></li>
+            <li>确认安装后即可从桌面启动，和原生APP一样使用</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 添加/编辑股票弹窗 -->
+  <div id="stockModal" class="modal hidden">
+    <div class="modal-overlay" onclick="app.closeStockModal()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="stockModalTitle">添加自选股</h3>
+        <button class="icon-btn" onclick="app.closeStockModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>股票代码 *</label>
+          <div class="code-input-group">
+            <select id="stockMarket" class="input-sm">
+              <option value="sh">sh 上海</option>
+              <option value="sz">sz 深圳</option>
+              <option value="bj">bj 北京</option>
+            </select>
+            <input type="text" id="stockCode" placeholder="6位数字代码 如 600519" maxlength="6" class="flex-1">
+          </div>
+          <small class="hint">示例：贵州茅台 = sh600519，平安银行 = sz000001</small>
+        </div>
+
+        <div class="form-group">
+          <label>股票名称 *</label>
+          <input type="text" id="stockName" placeholder="如 贵州茅台">
+        </div>
+
+        <div class="form-group">
+          <label>所属板块</label>
+          <select id="stockSector">
+            <option value="">-- 选择板块 --</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>持仓数量</label>
+            <input type="number" id="stockShares" placeholder="股数" min="0" step="100">
+          </div>
+          <div class="form-group flex-1">
+            <label>成本价 (¥)</label>
+            <input type="number" id="stockCost" placeholder="买入均价" min="0" step="0.01">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>备注</label>
+          <input type="text" id="stockNote" placeholder="选填，买入理由等">
+        </div>
+
+        <button class="btn btn-outline btn-block" onclick="app.quickFetchFromCode()">🔍 根据代码自动填充信息</button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="app.closeStockModal()">取消</button>
+        <button class="btn btn-primary" onclick="app.saveStock()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加板块弹窗 -->
+  <div id="sectorModal" class="modal hidden">
+    <div class="modal-overlay" onclick="app.closeSectorModal()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="sectorModalTitle">新建板块</h3>
+        <button class="icon-btn" onclick="app.closeSectorModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>板块名称 *</label>
+          <input type="text" id="sectorName" placeholder="如 白酒、新能源、银行">
+        </div>
+        <div class="form-group">
+          <label>板块图标</label>
+          <div class="emoji-picker" id="emojiPicker">
+            <span class="emoji-opt active">🏦</span>
+            <span class="emoji-opt">🍶</span>
+            <span class="emoji-opt">⚡</span>
+            <span class="emoji-opt">🔋</span>
+            <span class="emoji-opt">💊</span>
+            <span class="emoji-opt">🏗️</span>
+            <span class="emoji-opt">📱</span>
+            <span class="emoji-opt">🚗</span>
+            <span class="emoji-opt">🛒</span>
+            <span class="emoji-opt">🏠</span>
+            <span class="emoji-opt">✈️</span>
+            <span class="emoji-opt">🎮</span>
+            <span class="emoji-opt">💎</span>
+            <span class="emoji-opt">🌾</span>
+            <span class="emoji-opt">📦</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>板块颜色</label>
+          <div class="color-picker" id="colorPicker">
+            <span class="color-opt active" style="background:#1a73e8"></span>
+            <span class="color-opt" style="background:#e74c3c"></span>
+            <span class="color-opt" style="background:#27ae60"></span>
+            <span class="color-opt" style="background:#f39c12"></span>
+            <span class="color-opt" style="background:#9b59b6"></span>
+            <span class="color-opt" style="background:#1abc9c"></span>
+            <span class="color-opt" style="background:#e67e22"></span>
+            <span class="color-opt" style="background:#34495e"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="app.closeSectorModal()">取消</button>
+        <button class="btn btn-primary" onclick="app.saveSector()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 股票详情弹窗 -->
+  <div id="detailModal" class="modal hidden">
+    <div class="modal-overlay" onclick="app.closeDetailModal()"></div>
+    <div class="modal-content modal-detail">
+      <div class="modal-header">
+        <h3 id="detailTitle">股票详情</h3>
+        <button class="icon-btn" onclick="app.closeDetailModal()">×</button>
+      </div>
+      <div class="modal-body" id="detailBody"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="app.deleteCurrentStock()">🗑️ 删除</button>
+        <button class="btn btn-outline" onclick="app.editCurrentStock()">✏️ 编辑</button>
+        <button class="btn btn-primary" onclick="app.refreshOneStock()">🔄 刷新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加/编辑悟道弹窗 -->
+  <div id="insightModal" class="modal hidden">
+    <div class="modal-overlay" onclick="app.closeInsightModal()"></div>
+    <div class="modal-content modal-insight">
+      <div class="modal-header">
+        <h3 id="insightModalTitle">写下我的悟道</h3>
+        <button class="icon-btn" onclick="app.closeInsightModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>心情标签</label>
+            <div class="mood-picker" id="moodPicker">
+              <span class="mood-opt active" data-val="🧘">🧘 平静</span>
+              <span class="mood-opt" data-val="📈">📈 看多</span>
+              <span class="mood-opt" data-val="📉">📉 看空</span>
+              <span class="mood-opt" data-val="🫂">🫂 反思</span>
+              <span class="mood-opt" data-val="🔥">🔥 警示</span>
+              <span class="mood-opt" data-val="🌸">🌸 感恩</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>标题 *</label>
+          <input type="text" id="insightTitle" placeholder="一句话总结你的感悟，如：茅台跌破1600，机会来了？">
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>关联股票（选填）</label>
+            <select id="insightStock">
+              <option value="">-- 不关联 --</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label>标签（逗号分隔，选填）</label>
+            <input type="text" id="insightTags" placeholder="如 抄底, 止损, 心态">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>感悟正文 *</label>
+          <textarea id="insightContent" rows="8" placeholder="今天学到了什么？对市场的思考？对自己的复盘？越具体越珍贵... 🌸"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="app.closeInsightModal()">取消</button>
+        <button class="btn btn-primary" onclick="app.saveInsight()">💾 保存悟道</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./js/storage.js?v=INSIGHT1"></script>
+  <script src="./js/api.js?v=INSIGHT1"></script>
+  <script src="./js/strategy.js?v=INSIGHT1"></script>
+  <script src="./js/app.js?v=INSIGHT1"></script>
+  <script>
+    // 页面DOM就绪后立刻启动（不要等load事件，避免旧SW register还没清的干扰）
+    document.addEventListener('DOMContentLoaded', function () {
+      try { if (typeof app === 'object' && typeof app.init === 'function') app.init(); }
+      catch (e) { console.error('APP INIT FAIL:', e); document.body.classList.add('showBody'); }
+    });
+    // 注册 Service Worker（PWA 离线 + iOS 16.4+ 安装能力）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js?v=INSIGHT1').then(function (reg) {
+          console.log('[SW] 注册成功，scope:', reg.scope);
+        }).catch(function (err) {
+          console.warn('[SW] 注册失败:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
