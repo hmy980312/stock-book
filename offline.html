@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>离线状态 - 我的股票本</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #fff6f9 0%, #fff1ec 100%);
+      color: #4a3a44;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 40px 32px;
+      box-shadow: 0 8px 32px rgba(255,126,168,0.12);
+      max-width: 380px;
+      text-align: center;
+    }
+    .icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      background: linear-gradient(135deg, #ff8fb1 0%, #ffc79a 60%, #ffe3a3 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+    h1 { font-size: 22px; margin-bottom: 12px; font-weight: 700; }
+    p { color: #8a7682; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+    .btn {
+      display: inline-block;
+      padding: 10px 24px;
+      background: linear-gradient(135deg, #ff7ea8 0%, #ffb86b 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: 500;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(255,126,168,0.25);
+    }
+    .btn:active { transform: scale(0.97); }
+    .tips {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px dashed #f5d7e1;
+      font-size: 12px;
+      color: #b8a5ad;
+      text-align: left;
+    }
+    .tips li { margin: 4px 0; list-style: none; padding-left: 16px; position: relative; }
+    .tips li::before { content: '🌸'; position: absolute; left: 0; font-size: 10px; top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🕯️</div>
+    <h1>网络休息中...</h1>
+    <p>暂时连不上行情服务器。已添加的股票和板块仍然可以查看哦 ~ 💕</p>
+    <a href="./index.html" class="btn">回到我的小本本</a>
+    <div class="tips">
+      <li>检查一下 WLAN 或移动数据是否开启</li>
+      <li>部分公共Wi-Fi可能屏蔽了股票接口</li>
+      <li>网络恢复后会自动拉取最新股价</li>
+    </div>
+  </div>
+</body>
+</html>
+
