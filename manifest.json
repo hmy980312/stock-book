@@ -1,0 +1,53 @@
+{
+  "name": "我的股票本",
+  "short_name": "股票本",
+  "description": "温柔治愈的个人股票手账本，手动管理你的每一只股票，记录板块、成本、盈亏与悟道",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#fff6f9",
+  "theme_color": "#ff7ea8",
+  "lang": "zh-CN",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["finance", "lifestyle", "productivity"],
+  "shortcuts": [
+    {
+      "name": "添加一只股票",
+      "short_name": "添加股票",
+      "url": "./index.html?action=add",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "写下悟道",
+      "short_name": "写感悟",
+      "url": "./index.html#insights"
+    }
+  ]
+}
