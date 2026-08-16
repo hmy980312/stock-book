@@ -125,10 +125,10 @@ var Strategy = (function () {
 
     // 买点公式：合理估值 * buy系数
     const idealBuyPrice = round(rp * buyFormula);
-    // 超跌确认价
-    const oversoldPrice = round(ma20 * (1 + oversoldFormula / 100));
-    // 偏离度警戒价
-    const biasWarnPrice = round(ma20 * (1 + biasFormula / 100));
+    // 超跌确认价：基于MA20偏离，但不高于合理买点的90%（确保分批价格递减）
+    const oversoldPrice = round(Math.min(ma20 * (1 + oversoldFormula / 100), idealBuyPrice * 0.90));
+    // 偏离度警戒价：更极端的抄底位，不高于超跌价的90%
+    const biasWarnPrice = round(Math.min(ma20 * (1 + biasFormula / 100), oversoldPrice * 0.90));
 
     // 止盈价 & 止损价
     const takeProfitPrice = round(priceN * (1 + takeProfitRatio / 100));
@@ -145,8 +145,8 @@ var Strategy = (function () {
     ].map(b => ({
       price: b.price,
       ratio: round(b.ratio * 100, 0),
-      amount: round(maxPositionAmount * b.ratio / 100),
-      shares: Math.floor(maxPositionAmount * b.ratio / 100 / Math.max(1, priceN))
+      amount: round(maxPositionAmount * b.ratio),
+      shares: Math.floor(maxPositionAmount * b.ratio / Math.max(1, b.price))
     }));
 
     // 综合评分（买入倾向 0-100，越高越推荐买）

@@ -3,8 +3,8 @@
    兼容 iOS 16.4+ (WKWebView Service Worker)
    ========================================= */
 
-const CACHE_VERSION = 'stock-workbench-v9';
-const RUNTIME_CACHE = 'stock-workbench-runtime-v9';
+const CACHE_VERSION = 'stock-workbench-v12';
+const RUNTIME_CACHE = 'stock-workbench-runtime-v12';
 
 // 核心静态资源（App Shell）
 const PRECACHE_URLS = [

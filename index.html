@@ -634,13 +634,42 @@
     </div>
   </div>
 
+  <!-- 悟道详情弹窗 -->
+  <div id="insightDetailModal" class="modal hidden">
+    <div class="modal-overlay" onclick="app.closeInsightDetailModal()"></div>
+    <div class="modal-content modal-insight">
+      <div class="modal-header">
+        <h3>💡 悟道详情</h3>
+        <button class="icon-btn" onclick="app.closeInsightDetailModal()">×</button>
+      </div>
+      <div class="modal-body" id="insightDetailBody"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="app.deleteInsightFromDetail()">🗑️ 删除</button>
+        <button class="btn btn-outline" onclick="app.editInsightFromDetail()">✏️ 编辑</button>
+        <button class="btn btn-primary" onclick="app.closeInsightDetailModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast 提示 -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="./js/storage.js?v=INSIGHT1"></script>
-  <script src="./js/api.js?v=INSIGHT1"></script>
-  <script src="./js/strategy.js?v=INSIGHT1"></script>
-  <script src="./js/app.js?v=INSIGHT1"></script>
+  <!-- 自定义确认弹窗 -->
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-content" style="max-width:320px;text-align:center">
+      <div id="confirmIcon" style="font-size:40px;margin-bottom:12px">⚠️</div>
+      <div id="confirmMessage" style="font-size:15px;line-height:1.6;margin-bottom:20px;color:#333"></div>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="confirmCancel" class="btn btn-outline">取消</button>
+        <button id="confirmOk" class="btn btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/storage.js?v=CONFIRM1"></script>
+  <script src="./js/api.js?v=CONFIRM1"></script>
+  <script src="./js/strategy.js?v=CONFIRM1"></script>
+  <script src="./js/app.js?v=CONFIRM1"></script>
   <script>
     // 页面DOM就绪后立刻启动（不要等load事件，避免旧SW register还没清的干扰）
     document.addEventListener('DOMContentLoaded', function () {

@@ -199,7 +199,7 @@ var app = (function () {
       renderInsightList();
     });
 
-    // 悟道 - 列表事件委托（编辑/删除）
+    // 悟道 - 列表事件委托（编辑/删除/查看详情）
     document.getElementById('insightList').addEventListener('click', (e) => {
       const card = e.target.closest('.insight-card');
       if (!card) return;
@@ -211,6 +211,8 @@ var app = (function () {
         openEditInsightModal(card.dataset.id);
         return;
       }
+      // 点击卡片其他区域 → 查看详情
+      viewInsightDetail(card.dataset.id);
     });
   }
 
@@ -764,10 +766,11 @@ var app = (function () {
   }
 
   function confirmDeleteSector(id, name) {
-    if (!confirm(`真的要移除板块「${name}」吗？\n该板块下的股票会被放回「未分类」哦~`)) return;
-    StockDB.deleteSector(id);
-    renderAll();
-    toast('板块已移除 🌼');
+    showConfirm(`真的要移除板块「${name}」吗？\n该板块下的股票会被放回「未分类」哦~`, () => {
+      StockDB.deleteSector(id);
+      renderAll();
+      toast('板块已移除 🌼');
+    });
   }
 
   /* ==================== 股票详情 ==================== */
@@ -894,11 +897,12 @@ var app = (function () {
   function deleteCurrentStock() {
     const s = StockDB.getStocks().find(x => x.id === state.currentStockId);
     if (!s) return;
-    if (!confirm(`舍得删掉「${s.name}」吗？它会从本本里消失哦~`)) return;
-    StockDB.deleteStock(s.id);
-    closeDetailModal();
-    renderAll();
-    toast('移除啦 🍂');
+    showConfirm(`舍得删掉「${s.name}」吗？它会从本本里消失哦~`, () => {
+      StockDB.deleteStock(s.id);
+      closeDetailModal();
+      renderAll();
+      toast('移除啦 🍂');
+    });
   }
 
   /* ==================== 导入导出 ==================== */
@@ -922,10 +926,11 @@ var app = (function () {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (!confirm('导入将合并到现有数据（同ID覆盖），是否继续？')) return;
-        StockDB.importAll(data);
-        renderAll();
-        toast('导入成功');
+        showConfirm('导入将合并到现有数据（同ID覆盖），是否继续？', () => {
+          StockDB.importAll(data);
+          renderAll();
+          toast('导入成功');
+        });
       } catch (err) {
         toast('文件格式错误');
       }
@@ -935,10 +940,12 @@ var app = (function () {
   }
 
   function clearAllData() {
-    if (!confirm('⚠️ 要把本本里的内容都擦掉吗？擦了就找不回来啦！')) return;
-    if (!confirm('最后确认一次：所有股票、板块、设置都会消失哦！（抱紧）')) return;
-    StockDB.clearAll();
-    location.reload();
+    showConfirm('⚠️ 要把本本里的内容都擦掉吗？擦了就找不回来啦！', () => {
+      showConfirm('最后确认一次：所有股票、板块、设置都会消失哦！（抱紧）', () => {
+        StockDB.clearAll();
+        location.reload();
+      }, '🔥');
+    }, '🔥');
   }
 
   /* ==================== PWA 安装 ==================== */
@@ -1043,6 +1050,9 @@ var app = (function () {
     if (!s) return;
     state.strategy.stockId = id;
     state.strategy.stockCode = s.code;
+    // 切换股票时清除已缓存的K线/财务数据，避免用到旧数据
+    state.strategy.kline = { closes: [], volumes: [], highs: [], lows: [], opens: [], dates: [] };
+    state.strategy.finance = { pe: 0, pb: 0, eps: 0, totalMv: 0, reasonablePrice: 0 };
     renderStrategyStockList();
     document.getElementById('stepParams').style.display = 'block';
     document.getElementById('stepResult').style.display = 'none';
@@ -1058,22 +1068,57 @@ var app = (function () {
   async function autoFillStrategyParams() {
     if (!state.strategy.stockCode) { toast('请先选择一只股票'); return; }
     const code = state.strategy.stockCode;
-    toast('正在获取K线与财务数据...');
-    try {
-      const [kline, finance] = await Promise.all([
-        StockAPI.fetchKline(code, 120),
-        StockAPI.fetchFinance(code)
-      ]);
-      state.strategy.kline = kline;
-      state.strategy.finance = finance;
 
+    // 复用已缓存的K线数据，避免每次自动填充结果不同
+    let kline = state.strategy.kline;
+    let finance = state.strategy.finance;
+    const needsFetch = !kline || !kline.closes || kline.closes.length === 0;
+
+    if (needsFetch) {
+      toast('正在获取K线与财务数据...');
+      try {
+        const [k, f] = await Promise.all([
+          StockAPI.fetchKline(code, 120),
+          StockAPI.fetchFinance(code)
+        ]);
+        kline = k;
+        finance = f;
+        state.strategy.kline = kline;
+        state.strategy.finance = finance;
+      } catch (e) {
+        console.warn(e);
+      }
+    } else {
+      toast('使用已缓存数据填充参数');
+    }
+
+    // K线数据为空说明网络请求失败，提示用户
+    if (!kline || !kline.closes || kline.closes.length === 0) {
+      toast('❌ K线数据获取失败，请检查网络后重试，或手动输入参数');
+      return;
+    }
+
+    try {
       const closes = kline.closes || [];
       const priceN = closes.length > 0 ? closes[closes.length - 1] : 0;
 
       if (state.strategy.style === 'left') {
-        document.getElementById('param_reasonablePrice').value = finance.reasonablePrice || priceN * 0.9;
+        // 合理估值：优先用 K线 120日均价（市场共识），再用财务数据校验
+        let reasonablePrice = 0;
+        if (closes.length > 0) {
+          const sum = closes.reduce((a, b) => a + Number(b || 0), 0);
+          reasonablePrice = sum / closes.length;
+        }
+        // 财务数据作为参考：若在合理范围内则取两者均值
+        const financePrice = finance.reasonablePrice || 0;
+        if (financePrice > 0 && priceN > 0 && financePrice >= priceN * 0.3 && financePrice <= priceN * 1.5) {
+          reasonablePrice = (reasonablePrice + financePrice) / 2;
+        }
+        if (!reasonablePrice || reasonablePrice <= 0) {
+          reasonablePrice = priceN * 0.9;
+        }
+        document.getElementById('param_reasonablePrice').value = reasonablePrice.toFixed(2);
         document.getElementById('param_totalCapital').value = document.getElementById('param_totalCapital').value || 100000;
-        // 其他默认值保持
       } else {
         // 前高：120日最高价
         const highs = kline.highs || [];
@@ -1102,6 +1147,12 @@ var app = (function () {
       } catch (e) {
         console.warn(e);
       }
+    }
+
+    // K线数据为空说明网络请求失败，阻止分析
+    if (!state.strategy.kline || !state.strategy.kline.closes || state.strategy.kline.closes.length === 0) {
+      toast('❌ K线数据获取失败，无法进行分析。请检查网络后点「✨自动填充」重试');
+      return;
     }
 
     const closes = (state.strategy.kline && state.strategy.kline.closes) || [];
@@ -1276,6 +1327,22 @@ var app = (function () {
     toast._t = setTimeout(() => el.classList.add('hidden'), duration);
   }
 
+  function showConfirm(message, onOk, icon) {
+    const modal = document.getElementById('confirmModal');
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmIcon').textContent = icon || '⚠️';
+    modal.classList.remove('hidden');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+    const close = () => {
+      modal.classList.add('hidden');
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+    };
+    okBtn.onclick = () => { close(); if (onOk) onOk(); };
+    cancelBtn.onclick = close;
+  }
+
   function formatMoney(v) {
     if (v === null || v === undefined || isNaN(v)) return '¥0.00';
     const n = Number(v);
@@ -1420,8 +1487,8 @@ var app = (function () {
                 </div>
               </div>
               <div class="insight-actions">
-                <button class="insight-edit" title="编辑" onclick="event.stopPropagation();">✏️</button>
-                <button class="insight-del" title="删除" onclick="event.stopPropagation();">🗑️</button>
+                <button class="insight-edit" title="编辑">✏️</button>
+                <button class="insight-del" title="删除">🗑️</button>
               </div>
             </div>
             <div class="insight-content">${escapeHtml(preview).replace(/\n/g, '<br>')}</div>
@@ -1501,10 +1568,68 @@ var app = (function () {
   }
 
   function confirmDeleteInsight(id) {
-    if (!confirm('确定要删除这条悟道吗？（删除后无法恢复）')) return;
-    StockDB.deleteInsight(id);
-    toast('已删除');
-    renderInsightList();
+    showConfirm('确定要删除这条悟道吗？（删除后无法恢复）', () => {
+      StockDB.deleteInsight(id);
+      toast('已删除');
+      renderInsightList();
+    }, '🗑️');
+  }
+
+  function viewInsightDetail(id) {
+    const all = StockDB.getInsights();
+    const entry = all.find(x => x.id === id);
+    if (!entry) return;
+
+    const stockMap = Object.fromEntries(StockDB.getStocks().map(s => [s.id, s]));
+    const sectors = StockDB.getSectors();
+    const sectorMap = Object.fromEntries(sectors.map(s => [s.id, s]));
+
+    const mood = entry.mood || '🧘';
+    const stock = entry.stockId ? stockMap[entry.stockId] : null;
+    const sector = stock && stock.sectorId ? sectorMap[stock.sectorId] : null;
+    const tags = Array.isArray(entry.tags) ? entry.tags : [];
+    const ts = entry.updatedAt || entry.createdAt || Date.now();
+    const dateStr = formatDateTime(ts);
+
+    const tagsHtml = tags.map(t => `<span class="insight-tag">#${escapeHtml(String(t))}</span>`).join('');
+
+    const body = document.getElementById('insightDetailBody');
+    body.innerHTML = `
+      <div style="margin-bottom:12px">
+        <span style="font-size:28px">${mood}</span>
+        <span class="insight-stock-badge" style="margin-left:8px${sector ? `;border-color:${sector.color}` : ''}">
+          ${stock ? '🎯 ' + escapeHtml(stock.name || '') + ' ' + escapeHtml(stock.code || '') : '未关联股票'}
+        </span>
+      </div>
+      <h3 style="margin:0 0 8px 0;font-size:18px;font-weight:700">${escapeHtml(entry.title || '（无题）')}</h3>
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">🕒 ${dateStr}</div>
+      <div style="font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap">${escapeHtml(entry.content || '')}</div>
+      ${tagsHtml ? `<div class="insight-tags" style="margin-top:12px">${tagsHtml}</div>` : ''}`;
+
+    state.insight.editingId = id;
+    document.getElementById('insightDetailModal').classList.remove('hidden');
+  }
+
+  function closeInsightDetailModal() {
+    document.getElementById('insightDetailModal').classList.add('hidden');
+    state.insight.editingId = null;
+  }
+
+  function editInsightFromDetail() {
+    const id = state.insight.editingId;
+    closeInsightDetailModal();
+    if (id) openEditInsightModal(id);
+  }
+
+  function deleteInsightFromDetail() {
+    const id = state.insight.editingId;
+    if (!id) return;
+    showConfirm('确定要删除这条悟道吗？（删除后无法恢复）', () => {
+      StockDB.deleteInsight(id);
+      closeInsightDetailModal();
+      toast('已删除');
+      renderInsightList();
+    }, '🗑️');
   }
 
   function formatDateTime(ts) {
@@ -1535,7 +1660,9 @@ var app = (function () {
     runStrategy,
     // 悟道
     openAddInsightModal, openEditInsightModal, closeInsightModal,
-    saveInsight, confirmDeleteInsight
+    saveInsight, confirmDeleteInsight,
+    viewInsightDetail, closeInsightDetailModal,
+    editInsightFromDetail, deleteInsightFromDetail
   };
 })();
 
